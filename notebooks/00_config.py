@@ -15,7 +15,7 @@ FULL_SCHEMA = f"{CATALOG}.{SCHEMA}"
 # ---- Source Data ----
 SOURCE_TABLE = "data_academy_resources.nyc_taxi.yellow_tripdata"
 # Fallback if primary source doesn't exist
-SOURCE_TABLE_FALLBACK = "samples.nyc_tlc.trips"
+SOURCE_TABLE_FALLBACK = "samples.nyctaxi.trips"
 
 # ---- Bronze ----
 BRONZE_TRIPS = f"{FULL_SCHEMA}.bronze_trips"

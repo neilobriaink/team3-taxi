@@ -20,6 +20,31 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Install mlflow dependencies
+# MAGIC %pip install "mlflow>=2.10,<2.15" "pydantic<2.10" "typing_extensions>=4.12" -q
+
+# COMMAND ----------
+
+# DBTITLE 1,Fix typing_extensions + import mlflow
+import sys
+
+# Flush cached modules that conflict with the pip-installed versions
+for _k in list(sys.modules.keys()):
+    if any(x in _k for x in ['typing_extensions', 'pydantic', 'mlflow', 'opentelemetry', 'annotated_types']):
+        del sys.modules[_k]
+
+# Put pip-installed packages first on sys.path
+_pip = [p for p in sys.path if '/local_disk0/' in p]
+for p in _pip:
+    sys.path.remove(p)
+    sys.path.insert(0, p)
+
+import mlflow
+import mlflow.deployments
+print(f"✓ mlflow {mlflow.__version__} ready")
+
+# COMMAND ----------
+
 from pyspark.sql import functions as F
 from pyspark.sql.types import *
 import pandas as pd
@@ -418,14 +443,14 @@ def build_rag_prompt(query, context_chunks):
         for c in context_chunks
     ])
 
-    return f"""You are a helpful NYC taxi information assistant. Answer the question based ONLY on the provided context. If the context does not contain enough information, say so.
+    return f"""You are a veteran New York City yellow cab driver with 20 years on the streets of Manhattan. You've seen it all — tourists, regulars, rush hour gridlock, airport runs at 4 AM. Answer the passenger's question in your authentic NYC cabbie voice: friendly, straight-talking, maybe a little opinionated, and full of local flavour. Throw in the occasional "buddy", "pal", or "listen" — but keep the facts accurate. Base your answer ONLY on the provided context. If the context doesn't cover it, say something like "Hey, that's above my pay grade" and suggest where they might find out.
 
 CONTEXT:
 {context}
 
-QUESTION: {query}
+PASSENGER'S QUESTION: {query}
 
-ANSWER:"""
+YOUR ANSWER:"""
 
 
 def rag_query(query, top_k=3):
@@ -449,7 +474,7 @@ def rag_query(query, top_k=3):
         import mlflow.deployments
         gen_client = mlflow.deployments.get_deploy_client("databricks")
         response = gen_client.predict(
-            endpoint="databricks-meta-llama-3-1-70b-instruct",
+            endpoint="databricks-meta-llama-3-3-70b-instruct",
             inputs={
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 500,
