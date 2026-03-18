@@ -17,6 +17,16 @@
 
 # COMMAND ----------
 
+# COMMAND ----------
+
+# MAGIC %pip install "typing_extensions>=4.12" --quiet
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # MAGIC %run ./00_config
 
 # COMMAND ----------
@@ -56,9 +66,11 @@ feature_cols = [
     "pickup_month",
     "is_weekend",
     "passenger_count",
-    "PULocationID",
-    "DOLocationID",
-    "RatecodeID",
+    "pickup_latitude",
+    "pickup_longitude",
+    "dropoff_latitude",
+    "dropoff_longitude",
+    "RateCodeID",
     "payment_type",
     "trip_duration_minutes",
 ]

@@ -173,6 +173,6 @@ display(quality_report)
 # MAGIC | Average speed | < 100 mph | Physically implausible in NYC traffic |
 # MAGIC
 # MAGIC **Missing values**: Rows with null pickup/dropoff timestamps, distance, or fare are dropped.
-# MAGIC Non-critical nulls (e.g., `congestion_surcharge`) are retained.
+# MAGIC Non-critical nulls (e.g., `_rescued_data`) are retained.
 # MAGIC
 # MAGIC **Next step**: Run `03_gold_analytics` to build the analytics layer.

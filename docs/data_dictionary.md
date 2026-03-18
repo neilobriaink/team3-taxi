@@ -9,11 +9,13 @@
 | tpep_dropoff_datetime | timestamp | Date and time when the meter was disengaged |
 | passenger_count | int | Number of passengers in the vehicle (driver-entered) |
 | trip_distance | double | Elapsed trip distance in miles reported by the taximeter |
-| RatecodeID | int | Rate code in effect (1=Standard, 2=JFK, 3=Newark, 4=Nassau/Westchester, 5=Negotiated, 6=Group ride) |
+| pickup_longitude | double | Longitude where the meter was engaged |
+| pickup_latitude | double | Latitude where the meter was engaged |
+| RateCodeID | long | Rate code in effect (1=Standard, 2=JFK, 3=Newark, 4=Nassau/Westchester, 5=Negotiated, 6=Group ride) |
 | store_and_fwd_flag | string | Y/N — whether the trip record was held in vehicle memory before sending to vendor (Y=store and forward, N=not) |
-| PULocationID | int | TLC Taxi Zone where the meter was engaged |
-| DOLocationID | int | TLC Taxi Zone where the meter was disengaged |
-| payment_type | int | How the passenger paid (1=Credit card, 2=Cash, 3=No charge, 4=Dispute, 5=Unknown, 6=Voided trip) |
+| dropoff_longitude | double | Longitude where the meter was disengaged |
+| dropoff_latitude | double | Latitude where the meter was disengaged |
+| payment_type | long | How the passenger paid (1=Credit card, 2=Cash, 3=No charge, 4=Dispute, 5=Unknown, 6=Voided trip) |
 | fare_amount | double | Time-and-distance fare calculated by the meter ($) |
 | extra | double | Miscellaneous extras and surcharges ($), e.g., $0.50/$1.00 rush hour/overnight |
 | mta_tax | double | $0.50 MTA tax triggered based on metered rate |
@@ -21,7 +23,7 @@
 | tolls_amount | double | Total amount of all tolls paid in trip ($) |
 | improvement_surcharge | double | $0.30 improvement surcharge assessed on hailed trips |
 | total_amount | double | Total amount charged to passengers, does not include cash tips ($) |
-| congestion_surcharge | double | Congestion surcharge for trips in Manhattan below 96th St ($) |
+| _rescued_data | string | Data that could not be parsed during ingestion (Databricks auto-loader metadata) |
 
 ## Bronze Layer: `students_data.team3_taxi.bronze_trips`
 
@@ -112,9 +114,11 @@ Used by `04_ml_pipeline` for fare amount prediction:
 | pickup_month | int | Captures seasonal trends |
 | is_weekend | int | Binary weekend indicator |
 | passenger_count | int | Number of passengers |
-| PULocationID | int | Pickup zone — captures location-based pricing |
-| DOLocationID | int | Dropoff zone — captures route-based pricing |
-| RatecodeID | int | Rate code (flat rate vs metered) |
+| pickup_latitude | double | Pickup latitude — captures location-based pricing |
+| pickup_longitude | double | Pickup longitude — captures location-based pricing |
+| dropoff_latitude | double | Dropoff latitude — captures route-based pricing |
+| dropoff_longitude | double | Dropoff longitude — captures route-based pricing |
+| RateCodeID | long | Rate code (flat rate vs metered) |
 | payment_type | int | Payment method |
 | trip_duration_minutes | double | Trip time — correlated with metered fare |
 | **fare_amount** | **double** | **TARGET variable** |
