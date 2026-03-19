@@ -2,11 +2,16 @@
 
 This guide explains how to load the trained taxi fare model from MLflow and use it in a new Databricks notebook.
 
+The model is saved as a **Spark ML PipelineModel** that bundles `VectorAssembler → StandardScaler → RandomForest` into a single artifact. No separate scaler setup is needed — just pass raw feature columns and the pipeline handles everything.
+
 ## Where Is the Model Saved?
 
 - **MLflow Experiment:** `/Users/neil.obriain@kainos.com/taxi-fare-prediction`
+- **Run name:** `random_forest_user_friendly`
+- **Run ID:** `09418df8decf4fe8af5e05732331edff`
 - **Artifact path:** `taxi_fare_model`
 - **Training notebook:** `task4-refine` (Cell 40)
+- **Demo notebook:** `Taxi Fare Predictor`
 
 ---
 
@@ -16,6 +21,8 @@ This guide explains how to load the trained taxi fare model from MLflow and use 
 2. Open the experiment: `/Users/neil.obriain@kainos.com/taxi-fare-prediction`
 3. Find the latest run (named `random_forest_user_friendly`).
 4. Copy the **Run ID** from the run details page.
+
+The current Run ID is `09418df8decf4fe8af5e05732331edff`.
 
 ---
 
@@ -32,11 +39,19 @@ os.environ["MLFLOW_DFS_TMP"] = "/Volumes/students_data/team3-taxi/mlflow_tmp"
 model = mlflow.spark.load_model("runs:/<run_id>/taxi_fare_model")
 ```
 
+The returned `model` is a `PipelineModel` with three stages:
+
+| Stage | Type | Purpose |
+| --- | --- | --- |
+| 0 | `VectorAssembler` | Combines 9 feature columns into a single vector |
+| 1 | `StandardScalerModel` | Scales features (mean=0, std=1), already fitted |
+| 2 | `RandomForestRegressionModel` | Predicts `total_amount` |
+
 ---
 
-## 3. Prepare Features and Make a Prediction
+## 3. Make a Prediction
 
-The model expects **9 user-friendly features** in this exact order:
+The model expects **9 user-friendly features** as raw columns. The pipeline handles assembling and scaling internally.
 
 | Feature | Description | Example Values |
 | --- | --- | --- |
@@ -53,16 +68,7 @@ The model expects **9 user-friendly features** in this exact order:
 ### Full Example
 
 ```python
-from pyspark.ml.feature import VectorAssembler, StandardScaler
-
-# Feature columns - must match training order
-feat_cols = [
-    'trip_distance', 'trip_duration_minutes', 'passenger_count',
-    'vendor_key', 'rate_code_key', 'payment_type_key',
-    'pickup_hour', 'pickup_day_of_week', 'pickup_is_weekend'
-]
-
-# Create a DataFrame with your trip data
+# Create a DataFrame with your trip data (all values as floats)
 new_trip = spark.createDataFrame([{
     'trip_distance':         5.0,
     'trip_duration_minutes': 20.0,
@@ -75,26 +81,14 @@ new_trip = spark.createDataFrame([{
     'pickup_is_weekend':     0.0,
 }])
 
-# Assemble features into a vector (same as training)
-assembler = VectorAssembler(inputCols=feat_cols, outputCol='features_raw', handleInvalid='skip')
-assembled = assembler.transform(new_trip)
-
-# IMPORTANT: You also need the same fitted StandardScaler from training.
-# Option A: Re-fit scaler on training data (rebuild from source table)
-# Option B: Use the scaler saved in your training session (final_scaler)
-scaled = final_scaler.transform(assembled)
-
-# Predict
-predictions = model.transform(scaled)
+# Predict — the pipeline handles assembling and scaling internally
+predictions = model.transform(new_trip)
 display(predictions.select('prediction'))
 ```
 
 ---
 
 ## 4. Quick Prediction Function (Copy-Paste Ready)
-
-If you have the `final_assembler` and `final_scaler` objects from Cell 40,
-you can use this helper function:
 
 ```python
 def predict_fare(trip_distance, trip_duration_minutes, passenger_count=1,
@@ -112,10 +106,7 @@ def predict_fare(trip_distance, trip_duration_minutes, passenger_count=1,
         'pickup_is_weekend':     float(pickup_is_weekend),
     }
     trip_df = spark.createDataFrame([trip])
-    assembled = final_assembler.transform(trip_df)
-    scaled = final_scaler.transform(assembled)
-    prediction = model.transform(scaled)
-    return round(prediction.select('prediction').first()[0], 2)
+    return round(model.transform(trip_df).select('prediction').first()[0], 2)
 
 # Example usage
 fare = predict_fare(trip_distance=5.0, trip_duration_minutes=20, pickup_hour=17)
@@ -124,7 +115,26 @@ print(f"Predicted fare: ${fare:.2f}")
 
 ---
 
-## 5. Model Accuracy
+## 5. Batch Prediction on Multiple Trips
+
+```python
+from pyspark.sql.functions import col
+
+# Load any DataFrame with the 9 feature columns
+trips_df = spark.createDataFrame([
+    (3.5, 15.0, 1.0, 1.0, 1.0, 1.0, 17.0, 6.0, 0.0),
+    (10.0, 30.0, 2.0, 2.0, 1.0, 1.0, 9.0, 3.0, 0.0),
+], ['trip_distance', 'trip_duration_minutes', 'passenger_count',
+    'vendor_key', 'rate_code_key', 'payment_type_key',
+    'pickup_hour', 'pickup_day_of_week', 'pickup_is_weekend'])
+
+scored = model.transform(trips_df)
+display(scored.select('trip_distance', 'trip_duration_minutes', 'prediction'))
+```
+
+---
+
+## 6. Model Accuracy
 
 Tested on 200 random valid trips (>= 1 mile):
 
@@ -134,11 +144,13 @@ Tested on 200 random valid trips (>= 1 mile):
 | Median Absolute Error | $0.81 |
 | Mean Abs % Error | 7.4% |
 
+Full test set (2.49M trips): MAE $1.60, R² 0.889.
+
 ---
 
 ## Important Notes
 
-- **Scaler dependency:** The model expects *scaled* features. You need the same `StandardScaler` fitted on the training data. If you don't have it, re-run Cell 40 in `task4-refine` to recreate `final_scaler`.
+- **No scaler dependency:** The model is a full `PipelineModel` that includes the fitted `StandardScaler`. Just pass raw feature columns — no manual scaling needed.
 - **Feature order matters:** The 9 features must be in the exact order listed above.
 - **All values must be floats:** Cast inputs to `float()` before creating the DataFrame.
 - **Shared cluster requirement:** Set `MLFLOW_DFS_TMP` to a `/Volumes/` path before loading the model.
@@ -148,5 +160,6 @@ Tested on 200 random valid trips (>= 1 mile):
 ## Source
 
 - **Training notebook:** `/Users/neil.obriain@kainos.com/team3-taxi/ml_pipeline/task4-refine`
+- **Demo notebook:** `/Users/neil.obriain@kainos.com/team3-taxi/ml_pipeline/Taxi Fare Predictor`
 - **MLflow experiment:** `/Users/neil.obriain@kainos.com/taxi-fare-prediction`
 - **Data source:** `students_data.team3-taxi.fact_trip` joined with `students_data.team3-taxi.dim_datetime_hour`

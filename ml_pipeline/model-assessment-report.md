@@ -1,10 +1,11 @@
 # Taxi Fare Prediction Model — Assessment Report
 
 **Team:** Team 3  
-**Date:** 18 March 2026  
+**Date:** 19 March 2026  
 **Notebook:** `task4-refine` (Cells 40–42)  
+**Demo Notebook:** `Taxi Fare Predictor`  
 **Platform:** Databricks (Azure), Spark 17.3, Photon Runtime  
-**MLflow Run ID:** `9c587c7c7a1e415cbf04d44fbe33fff6`
+**MLflow Run ID:** `09418df8decf4fe8af5e05732331edff`
 
 ---
 
@@ -21,8 +22,8 @@ The model is trained on **46.4 million taxi trips** from the `students_data.team
 | Metric | Value |
 | --- | --- |
 | Total trips in dataset | 46,388,197 |
-| Training set size | 9,980,784 (80%) |
-| Test set size | 2,494,677 (20%) |
+| Training set size | 9,980,001 (80%) |
+| Test set size | 2,495,045 (20%) |
 | Train/test split seed | 42 |
 | Source table | `students_data.team3-taxi.fact_trip` |
 | Dimension table joined | `students_data.team3-taxi.dim_datetime_hour` |
@@ -67,15 +68,22 @@ The surrogate datetime keys (`pickup_datetime_hour_key`, `pickup_datetime_day_ke
 
 ## 4. Model Architecture
 
-| Component | Detail |
+The model is saved as a **Spark ML PipelineModel** that bundles all preprocessing and prediction into a single artifact:
+
+| Stage | Component | Detail |
+| --- | --- | --- |
+| 1 | `VectorAssembler` | Combines 9 feature columns into a single vector (`features_raw`) |
+| 2 | `StandardScaler` | Scales features (withMean=True, withStd=True) → `features` |
+| 3 | `RandomForestRegressor` | 100 trees, predicts `total_amount` (total fare in USD) |
+
+| Property | Value |
 | --- | --- |
-| Algorithm | **Random Forest Regressor** (Spark MLlib) |
-| Number of trees | 100 |
-| Feature assembly | `VectorAssembler` → single feature vector |
-| Feature scaling | `StandardScaler` (withMean=True, withStd=True) |
-| Target variable | `total_amount` (total fare in USD) |
+| Saved as | Spark ML `PipelineModel` (all stages in one artifact) |
 | Random seed | 42 |
 | Framework | PySpark MLlib (distributed) |
+| Target variable | `total_amount` (total fare in USD) |
+
+Because the entire pipeline is saved as one MLflow artifact, consumers only need to call `model.transform(raw_df)` — no separate scaler re-fitting is required.
 
 ---
 
@@ -86,7 +94,7 @@ Evaluated on the held-out **2.49 million trip** test set:
 | Metric | Value | Interpretation |
 | --- | --- | --- |
 | **MAE** | **$1.60** | On average, predictions are within $1.60 of actual fare |
-| **R²** | **0.887** | Model explains 88.7% of fare variance |
+| **R²** | **0.889** | Model explains 88.9% of fare variance |
 
 ---
 
@@ -195,20 +203,32 @@ These predictions align with real NYC taxi fare expectations.
 | --- | --- |
 | Experiment path | `/Users/neil.obriain@kainos.com/taxi-fare-prediction` |
 | Run name | `random_forest_user_friendly` |
-| Run ID | `9c587c7c7a1e415cbf04d44fbe33fff6` |
+| Run ID | `09418df8decf4fe8af5e05732331edff` |
 | Artifact path | `taxi_fare_model` |
+| Artifact type | Spark ML `PipelineModel` (VectorAssembler → StandardScaler → RandomForest) |
 | Model signature | Inferred from predictions (9 input features → 1 output) |
 | Input example | Included for serving compatibility |
-| Logged parameters | model_type, features, num_features, train_size, test_size |
-| Logged metrics | MAE ($1.60), R² (0.887) |
+| Logged parameters | model_type, features, num_features, train_size, test_size, pipeline_stages |
+| Logged metrics | MAE ($1.60), R² (0.889) |
 
 ### How to Load the Saved Model
+
+The saved artifact is a full `PipelineModel` — it includes the fitted `VectorAssembler`, `StandardScaler`, and `RandomForestRegressionModel`. No separate scaler re-fitting is needed.
 
 ```python
 import os, mlflow.spark
 os.environ["MLFLOW_DFS_TMP"] = "/Volumes/students_data/team3-taxi/mlflow_tmp"
-model = mlflow.spark.load_model("runs:/9c587c7c7a1e415cbf04d44fbe33fff6/taxi_fare_model")
+model = mlflow.spark.load_model("runs:/09418df8decf4fe8af5e05732331edff/taxi_fare_model")
+
+# Predict directly from raw feature columns — pipeline handles assembling and scaling
+trip = spark.createDataFrame([{'trip_distance': 5.0, 'trip_duration_minutes': 20.0,
+    'passenger_count': 2.0, 'vendor_key': 1.0, 'rate_code_key': 1.0,
+    'payment_type_key': 1.0, 'pickup_hour': 14.0, 'pickup_day_of_week': 4.0,
+    'pickup_is_weekend': 0.0}])
+prediction = model.transform(trip)
 ```
+
+See `how-to-load-taxi-fare-model.md` and the `Taxi Fare Predictor` notebook for full usage examples.
 
 ---
 
@@ -233,8 +253,9 @@ model = mlflow.spark.load_model("runs:/9c587c7c7a1e415cbf04d44fbe33fff6/taxi_far
 2. **High accuracy for typical trips** — 85.5% of predictions within $2, median error just $0.81
 3. **Scalable** — Trained on 46M+ trips using distributed Spark MLlib
 4. **Reproducible** — Full experiment tracked in MLflow with signature and input examples
-5. **Strong R²** — 0.887 indicates the model captures 88.7% of fare variance with only user-friendly features
+5. **Strong R²** — 0.889 indicates the model captures 88.9% of fare variance with only user-friendly features
 6. **Time-aware** — Incorporates hour-of-day, day-of-week, and weekend effects via dimension table joins
+7. **Self-contained artifact** — Saved as a Spark ML `PipelineModel` (assembler + scaler + model). Consumers just call `model.transform(raw_df)` — no separate scaler re-fitting or preprocessing required
 
 ---
 
@@ -246,18 +267,19 @@ model = mlflow.spark.load_model("runs:/9c587c7c7a1e415cbf04d44fbe33fff6/taxi_far
 | Cannot account for tolls, surcharges, tips | Add `tolls_amount` as a user input (passengers can estimate) |
 | No location awareness | Add borough or zone-level features (less granular than lat/long) |
 | Single model type | Try GBTRegressor, CrossValidator for hyperparameter tuning |
-| Scaler not persisted in MLflow | Save assembler + scaler as a Pipeline to simplify loading |
 | Outlier sensitivity | Filter extreme fares during training (e.g. cap at $200) |
 
 ---
 
 ## 13. Conclusion
 
-The Random Forest model achieves strong predictive performance (**MAE $1.48, R² 0.887**) using only passenger-known features. It is practical for real-world fare estimation — a user simply provides distance, duration, passengers, time of day, and payment method to receive an accurate fare prediction.
+The Random Forest model achieves strong predictive performance (**MAE $1.48, R² 0.889**) using only passenger-known features. It is practical for real-world fare estimation — a user simply provides distance, duration, passengers, time of day, and payment method to receive an accurate fare prediction.
 
-The model is saved in MLflow and ready for deployment or further refinement.
+The model is saved as a self-contained Spark ML `PipelineModel` in MLflow, bundling all preprocessing (feature assembly and scaling) with the trained model. This means consumers can load and use the model with a single `model.transform()` call — no separate scaler setup required.
+
+See `how-to-load-taxi-fare-model.md` for loading instructions and the `Taxi Fare Predictor` notebook for a ready-to-run demo.
 
 ---
 
-*Report generated from `task4-refine` notebook, Cells 40–42.*  
+*Report updated 19 March 2026 from `task4-refine` notebook, Cells 40–42.*  
 *Team 3 — Taxi Fare Prediction Project*
